@@ -18,9 +18,9 @@
 #define pin_fan_PWR      11
 #define pin_fan_DIR      12
 
-#define led_red          1
-#define led_blue         2
-#define led_green        3
+#define led_red          3
+#define led_blue         5
+#define led_green        4
 
 LCDScreen UI = LCDScreen(); 	// LCD display
 
