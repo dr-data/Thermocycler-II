@@ -111,7 +111,8 @@ void LCDScreen::printError( int mess )
   
   String message;
   if ( mess == 1 ) { message = "ERR: Overheating"; }
-  else { message = "ERR: Not ramping"; }
+  else if ( mess < 1 ) { message = "ERR: Not ramping"; }
+  else { message = "ERR: wrap failed"; }
 
   lcd.print( message );
 

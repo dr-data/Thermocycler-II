@@ -12,12 +12,15 @@
 #include "Adafruit_RGBLCDShield.h"
 #include <Wire.h>
 
-
 #define pin_thermistor   0
 #define pin_heater_PWR   6
 #define pin_heater_DIR   7
 #define pin_fan_PWR      11
 #define pin_fan_DIR      12
+
+#define led_red          1
+#define led_blue         2
+#define led_green        3
 
 LCDScreen UI = LCDScreen(); 	// LCD display
 
@@ -33,6 +36,7 @@ int MAX_CYCLES;                 // Cycles to perform
 int MAINTAIN_DURATION =  10000; // Hold at temperature for 10 seconds
 int PRINT_DELAY       =  1000;  // Print to serial monitor once every second (1000 ms)
 boolean DEBUG =  false; 	// Change to true to test fan and heater before running
+boolean ERRORCHECK = false;
 int current_cycle;		// No. of cycles passed
 double PCR_time_start;		// Start time of process
 
@@ -48,6 +52,12 @@ void setup()
   pinMode( pin_heater_DIR, OUTPUT );
   pinMode( pin_fan_PWR,    OUTPUT );
   pinMode( pin_fan_DIR,    OUTPUT ); 
+
+  pinMode( led_red,       OUTPUT );   
+  pinMode( led_blue,      OUTPUT );
+  pinMode( led_green,     OUTPUT );
+  
+  setLight( 0 ); // green
 
   /* initial status of Heater and Fan */
   digitalWrite( pin_heater_DIR, HIGH ); // HIGH = 5V, LOW = 0V (Ground) 
@@ -70,6 +80,7 @@ void setup()
 
     DEBUG = false;
 
+    setLight( 0 );
   }
 
   heaterOff();				// In case of reset
@@ -150,8 +161,9 @@ void RampUp( int target )
   /* Get current temperature */
   double ActualTemp = Thermistor( analogRead( pin_thermistor ) );
 
+  setLight( 1 ); // red
   analogWrite( pin_heater_PWR, 255 );
-
+  
   int warning = 0;
   double timeToPrint = 0;
   while( ActualTemp < target ) 
@@ -163,18 +175,21 @@ void RampUp( int target )
     /* Compare to previous temperature, should increase */
     if ( newTemp <= ActualTemp )
     {
-      if ( warning > WARNING_LIMIT )
-      {
-        Serial.println( "Error: Temperature not increasing on RampUp()." );
-        Serial.println( "Please make sure device is correctly wired." );
-        heaterOff();
-        UI.printError( 0 );
-        while ( true ) { 
+      if ( ERRORCHECK ) { 
+        if ( warning > WARNING_LIMIT )
+        {
+          Serial.println( "Error: Temperature not increasing on RampUp()." );
+          Serial.println( "Please make sure device is correctly wired." );
+          heaterOff();
+          UI.printError( 0 );
+          setLight( 3 ); // yellow
+          while ( true ) { 
+          }
         }
-      }
-      else 
-      { 
-        warning++; 
+        else 
+        { 
+          warning++; 
+        }
       }
     }
     else if ( newTemp > CRITICAL_MAX )
@@ -183,6 +198,7 @@ void RampUp( int target )
       Serial.println( "Please make sure heater is functioning correctly" );
       heaterOff();
       UI.printError( 1 );
+      setLight( 3 ); // yellow
       while ( true ) { 
       }
     }
@@ -197,7 +213,6 @@ void RampUp( int target )
   }
 
   heaterOff();
-
   double totalTime = ( millis() - startTime )/1000;
   Serial.print( "RampUp finished in " );
   Serial.print( totalTime );
@@ -218,11 +233,13 @@ void Maintain( int target )
   double stopTime = time + MAINTAIN_DURATION;
 
   double nextPrint = time + PRINT_DELAY;
+  setLight( 1 ); // red
   while ( time < stopTime )
   {
     time = millis();
     nextPrint = PID( Thermistor( analogRead( 0 ) ), target, true, time, nextPrint );
   }
+  setLight( 0 ); // green
   Serial.println( "\n" );
 }
 
@@ -248,17 +265,20 @@ void RampDown( int target )
     UI.updateArrow( newTemp );
     if ( ActualTemp < newTemp )
     {
-      if ( warning > WARNING_LIMIT )
-      {
-        Serial.println( "Error: Temperature not decreasing on RampDown()." );
-        Serial.println( "Please make sure that device is correctly wired." );
-        fanOff();
-        UI.printError( 0 );
-        while ( true ) { 
+      if ( ERRORCHECK ) {
+        
+        if ( warning > WARNING_LIMIT )
+        {
+          Serial.println( "Error: Temperature not decreasing on RampDown()." );
+          Serial.println( "Please make sure that device is correctly wired." );
+          fanOff();
+          UI.printError( 0 );
+          while ( true ) { 
+          }
         }
-      }
-      else { 
-        warning++; 
+        else { 
+          warning++; 
+        }
       }
     }
     else { 
@@ -293,6 +313,7 @@ void wrapUp()
   Serial.println( "Wrapping up..." );
   double ActualTemp = Thermistor( analogRead( pin_thermistor ) );
 
+  setLight( 2 );
   analogWrite( pin_fan_PWR, 255 );
 
   double timeToPrint = 0;
@@ -303,14 +324,19 @@ void wrapUp()
 
     if ( ActualTemp < newTemp )
     {
-      if ( warning > WARNING_LIMIT )
-      {
-        Serial.println( "Error: Temperature not decreasing on WrapUp()." );
-        Serial.println( "Check log for details." );
-        sleep();
-      }
-      else { 
-        warning++; 
+      if ( ERRORCHECK ) {
+        if ( warning > WARNING_LIMIT )
+        {
+          Serial.println( "Error: Temperature not decreasing on WrapUp()." );
+          Serial.println( "Check log for details." );
+          fanOff();
+          UI.printError( 2 );
+          setLight( 3 );
+          while ( true ) { }
+        }
+        else { 
+          warning++; 
+        }
       }
     }
     else { 
@@ -324,6 +350,7 @@ void wrapUp()
   }
 
   analogWrite( pin_fan_PWR, 0 );
+  setLight( 0 );
   Serial.print( "Wrap finished. Fan is turning off. Current temperature: " );
   Serial.print( ActualTemp );
   Serial.println( "\n" );
@@ -341,6 +368,8 @@ void sleep()
   analogWrite( pin_fan_PWR, 0);
 
   Serial.println( "Putting device to sleep. Please restart the device." );
+  
+  setLight( 0 );
 
   set_sleep_mode( SLEEP_MODE_PWR_DOWN );
   cli();
@@ -396,11 +425,14 @@ double saturation(double heat)
 void heaterOff()
 {
   analogWrite( pin_heater_PWR, 0 );
+  setLight( 0 ); // green
+
 }
 
 void fanOff()
 {
   analogWrite( pin_fan_PWR, 0 );
+  setLight( 0 ); // green
 }
 
 double Thermistor( int RawADC )			// Return temperature reading from sensor
@@ -432,3 +464,34 @@ double checkPrint( double nextPrint, double ActualTemp )
   return nextPrint;
 }
 
+/* color
+   0 = green
+   1 = red
+   2 = blue
+   3 = yellow
+ */
+double setLight( int color ) {
+  
+  int redVal, greenVal, blueVal;
+  if ( color < 1 ) {
+    redVal = 0;
+    greenVal = 255;
+    blueVal = 0;
+  } else if ( color == 1 ) {
+    redVal = 255;
+    greenVal = 0;
+    blueVal = 0;
+  } else if ( color == 2 ) {
+    redVal = 0;
+    greenVal = 0;
+    blueVal = 255; 
+  } else if ( color == 3 ) {
+    redVal = 255;
+    greenVal = 255;
+    blueVal = 0;
+  }
+  
+  analogWrite( led_blue, blueVal );
+  analogWrite( led_red, redVal );
+  analogWrite( led_green, greenVal );  
+}
